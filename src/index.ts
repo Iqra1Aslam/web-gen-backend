@@ -6,6 +6,8 @@ import {defaultPrompt, getSystemPrompt } from './prompts.js';
 const multer = require('multer');
 const cors = require('cors');
 import axios from "axios";
+import { TextServiceClient} from "@google-ai/generativelanguage";
+
 import { createRepo } from './controllers/githubContrller.js';
 import { xai } from "@ai-sdk/xai";
 import { generateText } from 'ai';
@@ -14,7 +16,10 @@ import session from "express-session";
 import passport from "passport";
 
 import authRoutes from "./routes/auth";
+import payRoutes from "./routes/payment.js"
 import { connectDB} from './utills/db.js';
+import Groq from 'groq-sdk';
+import { User } from './models/user.js';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -61,91 +66,132 @@ const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY as string });
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Endpoint to generate website based on prompt
-app.post('/api/generate', upload.single('image'), async (req, res) => {
-  try {
-    const userprompt = req.body.prompt;
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
+// app.post('/api/generate', upload.single('image'), async (req, res) => {
+//   try {
+//     const userprompt = req.body.prompt;
     
-    if (!userprompt) {
-      res.status(400).json({ error: 'Prompt is required' });
-      return;
-    }
+//     if (!userprompt) {
+//       res.status(400).json({ error: 'Prompt is required' });
+//       return;
+//     }
     
-    const systemPrompt = getSystemPrompt();
+//     const systemPrompt = getSystemPrompt();
     
-    let baseImage = null;
-    let mimeType = null;
+//     let baseImage = null;
+//     let mimeType = null;
 
-    // Check if an image uploaded
-    if (req.file) {
-      const imageBuffer = req.file.buffer;
-      mimeType = req.file.mimetype;
-      baseImage = imageBuffer.toString("base64");
-    }
-    // Construct the user message
-const userMessage = `Here is an artifact that contains all files of the project visible to you.
-Consider the contents of ALL files in the project.
+//     // Check if an image uploaded
+//     if (req.file) {
+//       const imageBuffer = req.file.buffer;
+//       mimeType = req.file.mimetype;
+//       baseImage = imageBuffer.toString("base64");
+//     }
 
+//     // Construct the user message
+//     const userMessage = `Here is an artifact that contains all files of the project visible to you.
+// Consider the contents of ALL files in the project.
 
-${defaultPrompt}
+// ${defaultPrompt}
 
-Here is a list of files that exist on the file system but are not being shown to you:
+// Here is a list of files that exist on the file system but are not being shown to you:
 
-  - .gitignore
-  - package-lock.json
-User prompt: ${userprompt}`;
+//   - .gitignore
+//   - package-lock.json
+  
+// User prompt: ${userprompt}`;
 
+//     // Build messages array
+//     const messages: any[] = [
+//       {
+//         role: "system",
+//         content: systemPrompt,
+//       }
+//     ];
+
+//     // Groq API currently supports vision with llama-3.2-90b-vision-preview
+//     // For text-only, use other models like llama-3.1-70b-versatile
     
-    // Build messages array
-    const messages: any[] = [
-      {
-        role: "system",
-        content: systemPrompt,
-      }
-    ];
+//     if (baseImage && mimeType) {
+//       // Use vision model for images
+//       messages.push({
+//         role: "user",
+//         content: [
+//           { 
+//             type: "text", 
+//             text: userMessage 
+//           },
+//           {
+//             type: "image_url",
+//             image_url: {
+//               url: `data:${mimeType};base64,${baseImage}`
+//             }
+//           }
+//         ]
+//       });
 
-    // Add user message with or without image
-    if (baseImage && mimeType) {
-      messages.push({
-        role: "user",
-        content: [
-          { type: "text", text: userMessage },
-          {
-            type: "image",
-            image: `data:${mimeType};base64,${baseImage}`
-          }
-        ]
-      });
-    } else {
-      messages.push({
-        role: "user",
-        content: userMessage
-      });
-    }
-    const response = await openai.chat.completions.create({
-      model: "x-ai/grok-code-fast-1",
-      messages,
-      temperature: 0.1,
-      top_p: 0.95,
-      max_tokens: 6000,
-    });
+//       // Use vision-capable model
+//       const response = await groq.chat.completions.create({
+//         model: "llama-3.3-70b-specdec", // Vision model
+//         messages,
+//         temperature: 0.1,
+//         top_p: 0.95,
+//         max_tokens: 8000,
+//       });
 
-    const generatedText = response.choices[0].message?.content || '';
-    console.log("Generated text:", generatedText);
+//       const generatedText = response.choices[0].message?.content || '';
+//       const tokensUsed = response.usage?.total_tokens || 0;
 
+//       console.log("Generated text:", generatedText);
+//       console.log("Generated text tokens:", tokensUsed);
+
+//       res.status(200).json({
+//         steps: generatedText,
+//         basefiles: defaultPrompt,
+//         tokensUsed,
+//         model: "llama-3.2-90b-code"
+//       });
+
+//     } else {
+//       // Text-only request - use faster, more capable text model
+//       messages.push({
+//         role: "user",
+//         content: userMessage
+//       });
+
+//       const response = await groq.chat.completions.create({
+//         model: "llama-3.3-70b-versatile", // Fast text model (or use llama-3.1-70b-versatile)
+//         messages,
+//         temperature: 0.1,
+//         top_p: 0.95,
+//         max_tokens: 6000,
+//       });
+
+//       const generatedText = response.choices[0].message?.content || '';
+//       const tokensUsed = response.usage?.total_tokens || 0;
+      
+//       console.log("Generated text:", generatedText);
+//       console.log("Generated text tokens:", tokensUsed);
+
+//       res.status(200).json({
+//         steps: generatedText,
+//         basefiles: defaultPrompt,
+//         tokensUsed,
+//         model: "llama-3.3-70b-versatile"
+//       });
+//     }
     
-    res.status(200).json({
-      steps: generatedText, basefiles: defaultPrompt
-    });
-    
-  } catch (error) {
-    console.error('Error generating website:', error);
-    res.status(500).json({ 
-      error: 'Failed to generate website',
-      details: error instanceof Error ? error.message : String(error)
-    });
-  }
-})
+//   } catch (error) {
+//     console.error('Error generating website:', error);
+//     res.status(500).json({ 
+//       error: 'Failed to generate website',
+//       details: error instanceof Error ? error.message : String(error)
+//     });
+//   }
+// });
+
 app.post("/api/auto-fix", async (req: Request, res: Response): Promise<any> => {
   try {
     const { errorLog, projectFiles } = req.body;
@@ -177,16 +223,29 @@ ${errorLog}
 Here are the PROJECT FILES:
 ${JSON.stringify(projectFiles)}
 `;
-
-    const response = await openai.chat.completions.create({
-      model: "x-ai/grok-code-fast-1",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage }
-      ],
-      temperature: 0.1,
-      max_tokens: 6000
-    });
+// Build messages array
+    const messages: any[] = [
+      {
+        role: "system",
+        content: systemPrompt,
+      }
+    ];
+      const response = await groq.chat.completions.create({
+        model: "llama-3.2-90b-code", // Vision model
+        messages,
+        temperature: 0.1,
+        top_p: 0.95,
+        max_tokens: 6000,
+      });
+    // const response = await openai.chat.completions.create({
+    //   model: "x-ai/grok-code-fast-1",
+    //   messages: [
+    //     { role: "system", content: systemPrompt },
+    //     { role: "user", content: userMessage }
+    //   ],
+    //   temperature: 0.1,
+    //   max_tokens: 6000
+    // });
 
     const aiOutput = response.choices[0].message?.content || "";
     let fixedFiles;
@@ -250,13 +309,14 @@ Do not include explanations or comments.
       { role: "user" as const, content: `Project Files:\n${JSON.stringify(files)}` }
     ];
 
-    const response = await openai.chat.completions.create({
-      model: "x-ai/grok-code-fast-1",
-      messages,
-      temperature: 0.1,
-      top_p: 0.95,
-      max_tokens: 6000,
-    });
+  
+      const response = await groq.chat.completions.create({
+         model: "llama-3.3-70b-versatile", 
+        messages,
+        temperature: 0.1,
+        top_p: 0.95,
+        max_tokens: 6000,
+      });
 
     const content = response.choices[0].message?.content || "";
 
@@ -289,6 +349,264 @@ connectDB();
 console.log('connection established');
 // Routes
 app.use("/", authRoutes);
+app.use("/pay",payRoutes);
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+// const MONTHLY_CREDITS = 5;
+
+// export const resetUserCreditsIfNeeded = async (userId: string) => {
+//   const user = await User.findById(userId);
+//   if (!user) throw new Error("User not found");
+
+//   const now = new Date();
+//   const lastReset = new Date(user.lastCreditReset);
+
+//   const isNewMonth =
+//     now.getFullYear() > lastReset.getFullYear() ||
+//     now.getMonth() > lastReset.getMonth();
+
+//   if (isNewMonth) {
+//     user.credits = MONTHLY_CREDITS;       // Reset to monthly allowance
+//     user.lastCreditReset = now;           // Update reset date
+//     await user.save();
+//   }
+
+//   return user.credits;
+// };
+// export const useUserCredit = async (userId: string) => {
+//   const credits = await resetUserCreditsIfNeeded(userId);
+
+//   if (credits <= 0) {
+//     throw new Error("No credits left for this month");
+//   }
+
+//   const user = await User.findById(userId);
+//   if (!user) {
+//   throw new Error("User not found");
+// }
+//   user.credits -= 1;
+//   await user.save();
+
+//   return user.credits; // Return remaining credits
+// };
+
+
+
+// Pricing per 1M tokens
+const INPUT_PRICE = 0.10;
+const OUTPUT_PRICE = 0.40;
+
+// Convert USD → credits
+const CREDIT_VALUE = 0.002; // $0.002 = 1 credit
+// Reset monthly credits
+function resetMonthlyCreditsIfNeeded(user: any) {
+  const now = new Date();
+
+  if (!user.lastCreditReset) {
+    user.lastCreditReset = now;
+    user.credits = 5;
+    return;
+  }
+
+  const last = new Date(user.lastCreditReset);
+  const monthChanged =
+    last.getMonth() !== now.getMonth() ||
+    last.getFullYear() !== now.getFullYear();
+
+  if (monthChanged) {
+    user.credits = 5; // Free 5 every month
+    user.lastCreditReset = now;
+  }
+}
+// app.post('/api/generates', upload.single('image'), async (req, res): Promise<any> => {
+//   try {
+//     const userprompt = req.body.prompt;
+//     const userId = req.body.userId;
+
+//     if (!userprompt) {
+//       return res.status(400).json({ error: 'Prompt is required' });
+//     }
+
+//     console.log("User prompt:", userprompt);
+
+//     const user = await User.findById(userId);
+//     if (!user) return res.status(404).json({ error: "User not found" });
+
+//     resetMonthlyCreditsIfNeeded(user);
+
+//     if (user.credits <= 0) {
+//       return res.status(403).json({ error: "Not enough credits" });
+//     }
+
+//     const systemPrompt = getSystemPrompt();
+
+//     const userMessage = `
+// ${defaultPrompt}
+
+// User prompt: ${userprompt}
+// `;
+
+//     const messages: any[] = [
+//       { role: "system", content: systemPrompt }
+//     ];
+
+//     let model = "llama-3.2-90b-code";
+
+//     // ✅ IMAGE FLOW
+//     if (req.file) {
+//       const baseImage = req.file.buffer.toString("base64");
+
+//       messages.push({
+//         role: "user",
+//         content: [
+//           { type: "text", text: userMessage },
+//           {
+//             type: "image_url",
+//             image_url: {
+//               url: `data:${req.file.mimetype};base64,${baseImage}`
+//             }
+//           }
+//         ]
+//       });
+
+//       model = "llama-3.2-90b-vision-preview";
+//     } 
+//     // ✅ TEXT-ONLY FLOW
+//     else {
+//       messages.push({
+//         role: "user",
+//         content: userMessage
+//       });
+//     }
+
+//     // ✅ CALL GROQ
+//     const response = await groq.chat.completions.create({
+//       model,
+//       messages,
+//       temperature: 0.1,
+//       top_p: 0.95,
+//       max_tokens: 8000
+//     });
+
+//     const generatedText = response.choices[0].message?.content || "";
+
+//     const inputTokens = response.usage?.prompt_tokens ?? 0;
+//     const outputTokens = response.usage?.completion_tokens ?? 0;
+
+//     const inputCost = (inputTokens / 1_000_000) * INPUT_PRICE;
+//     const outputCost = (outputTokens / 1_000_000) * OUTPUT_PRICE;
+//     const totalCostUSD = inputCost + outputCost;
+
+//     const creditUsage = Math.ceil(totalCostUSD / CREDIT_VALUE);
+
+//     if (user.credits < creditUsage) {
+//       return res.status(403).json({ error: "Not enough credits" });
+//     }
+
+//     user.credits -= creditUsage;
+//     await user.save();
+
+//     return res.json({
+//       steps: generatedText,
+//       tokens: { inputTokens, outputTokens },
+//       cost: totalCostUSD,
+//       creditsUsed: creditUsage,
+//       creditsRemaining: user.credits
+//     });
+
+//   } catch (error) {
+//     console.error(error);
+//     return res.status(500).json({ error: "Generation failed" });
+//   }
+// });
+
+app.post('/api/generates', upload.single('image'),  async (req, res): Promise<any> => {
+  try {
+    const { prompt: userprompt, userId} = req.body;
+
+    if (!userprompt) return res.status(400).json({ error: 'Prompt is required' });
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    resetMonthlyCreditsIfNeeded(user);
+
+    if (user.credits <= 0) return res.status(403).json({ error: 'Not enough credits' });
+
+    // Include image as base64 in the prompt (optional)
+    let finalPrompt = userprompt;
+    if (req.file) {
+      const base64Image = req.file.buffer.toString('base64');
+      finalPrompt += `\n[Attached image: data:${req.file.mimetype};base64,${base64Image}]`;
+    }
+// const generatedText = json.candidates?.[0]?.content?.[0]?.text || "";
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const systemPrompt = getSystemPrompt();
+
+const response = await ai.models.generateContent({
+  model: "gemini-2.0-flash",
+  contents: [
+    {
+      role: "user",
+      parts: [{ text: systemPrompt }],
+    },
+    {
+      role: "user",
+      parts: [{ text: finalPrompt }],
+    },
+  ],
+  config: {
+    temperature: 0.1,
+    maxOutputTokens: 8000,
+  },
+});
+
+// const response = await ai.models.generateContent({
+//   model: "gemini-2.0-flash",
+//   contents: [
+//     {
+//       role: "user",
+//        parts: [{ text: finalPrompt }],
+//     },
+//   ],
+// });
+console.log(response);
+
+const generatedText =
+  response.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+
+console.log("Generated text:", generatedText);
+
+
+
+//   // --- Credit calculation ---
+    const inputTokens = response.usageMetadata?.promptTokenCount ?? 0;
+    const outputTokens = response.usageMetadata?.candidatesTokenCount ?? 0;
+
+    const inputCost = (inputTokens / 1_000_000) * INPUT_PRICE;
+    const outputCost = (outputTokens / 1_000_000) * OUTPUT_PRICE;
+    const totalCostUSD = inputCost + outputCost;
+    console.log("total Cost USD",totalCostUSD)
+    const creditUsage = Math.ceil(totalCostUSD / CREDIT_VALUE);
+    console.log("credit usage",creditUsage)
+    if (user.credits < creditUsage) return res.status(403).json({ error: "Not enough credits" });
+
+    user.credits -= creditUsage;
+    await user.save();
+    return res.json({
+      steps: generatedText,
+      tokens: { inputTokens, outputTokens },
+      costUSD: totalCostUSD,
+      creditsUsed: creditUsage,
+      creditsRemaining: user.credits
+     
+    });
+    
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Generation failed" });
+  }
+});
+

@@ -5,6 +5,7 @@ import { User } from "../models/user";
 import passport from "passport";
 import { Strategy as GoogleStrategy, Profile, VerifyCallback } from "passport-google-oauth20";
 import { Strategy as GitHubStrategy } from 'passport-github2';
+import { resend } from "../utills/resend";
 
 import { OAuth2Client } from 'google-auth-library';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -34,7 +35,7 @@ router.post("/signup", async (req: Request, res: Response): Promise<any> => {
     const newUser = new User({name, email, password: hashedPassword });
     await newUser.save();
 
-    res.status(201).json({ message: "User created successfully" });
+    res.status(201).json({ message: "User created successfully", user: { id:  newUser._id }, });
   } catch (err) {
     console.error("Signup error:", err);
     res.status(500).json({ message: "Server error", error: err });
@@ -42,23 +43,113 @@ router.post("/signup", async (req: Request, res: Response): Promise<any> => {
 });
 
 // SIGNIN
-router.post("/signin", async (req: Request, res: Response) : Promise<any> => {
+// router.post("/signin", async (req: Request, res: Response) : Promise<any> => {
+//   try {
+//     const { email, password }: SignInRequest = req.body;
+
+//     const user = await User.findOne({ email });
+//     if (!user) return res.status(400).json({ message: "Invalid credentials" });
+//     if (!user.password) {
+//   return res.status(400).json({ message: "User has no password set" });
+// }
+
+//     const isMatch = await bcrypt.compare(password, user.password);
+//     if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
+
+//     const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: "2h" });
+
+//     res.status(200).json({ token, user: { email: user.email, id: user._id } });
+//   } catch (err) {
+//     res.status(500).json({ message: "Server error" });
+//   }
+// });
+// SIGNIN (Step 1 - send OTP)
+router.post("/signin", async (req: Request, res: Response): Promise<any> => {
   try {
     const { email, password }: SignInRequest = req.body;
 
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ message: "Invalid credentials" });
+
     if (!user.password) {
-  return res.status(400).json({ message: "User has no password set" });
-}
+      return res.status(400).json({ message: "User has no password set" });
+    }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
 
-    const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: "2h" });
+    // --------------------------
+    // 🔥 Generate OTP
+    // --------------------------
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const expireTime = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-    res.status(200).json({ token, user: { email: user.email, id: user._id } });
+    user.otp = otp;
+    user.otpExpire = expireTime;
+    await user.save();
+
+    // --------------------------
+    // 🔥 Send OTP via Resend
+    // --------------------------
+    await resend.emails.send({
+      from: process.env.SENDER_EMAIL!,
+      to: user.email,
+      subject: "Your Login OTP Code",
+      html: `
+        <h2>Your OTP Code</h2>
+        <p style="font-size:24px; font-weight:bold;">${otp}</p>
+        <p>This OTP will expire in 5 minutes.</p>
+      `,
+    });
+
+    return res.status(200).json({
+      otpRequired: true,
+      message: "OTP sent to your email",
+      email: user.email,
+       id: user._id
+    });
+
   } catch (err) {
+    console.error("Login Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.post("/verify-signin-otp", async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp)
+      return res.status(400).json({ message: "Email & OTP required" });
+
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ message: "User not found" });
+
+    if (user.otp !== otp)
+      return res.status(400).json({ message: "Invalid OTP" });
+
+    if (!user.otpExpire || Date.now() > user.otpExpire.getTime())
+      return res.status(400).json({ message: "OTP expired" });
+
+    // Clear OTP after success
+    user.otp = null;
+    user.otpExpire = null;
+    await user.save();
+
+    // Issue JWT Token
+    const token = jwt.sign({ id: user._id }, JWT_SECRET, {
+      expiresIn: "2h",
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "OTP Verified. Login successful.",
+      token,
+      user: { email: user.email, id: user._id },
+    });
+
+  } catch (err) {
+    console.error("Verify OTP Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -70,7 +161,8 @@ passport.use(
     {
       clientID: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      callbackURL: "/auth/google/callback",
+      callbackURL: "https://k9182qsm-5000.asse.devtunnels.ms/auth/google/callback",
+      proxy: true, // Important for tunnels
     },
     async (
       accessToken: string,
@@ -141,7 +233,7 @@ router.get(
 //     });
 
 //     // Option 1: Redirect to frontend with token
-//     res.redirect(`http://localhost:5173/dashboard?token=${jwtToken}`);
+//     res.redirect(`https://k9182qsm-5173.asse.devtunnels.ms/dashboard?token=${jwtToken}`);
 
 //     // Option 2: Send JSON (if called via fetch)
 //     // res.status(200).json({ token: jwtToken, user: { id: user._id, email: user.email } });
@@ -160,7 +252,7 @@ router.get(
     const jwtToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET!, {
       expiresIn: "7d",
     });
-    res.redirect(`http://localhost:5173`);
+    res.redirect(`https://k9182qsm-5173.asse.devtunnels.ms`);
   }
 );
 // GitHub OAuth
@@ -169,8 +261,10 @@ passport.use(
     {
       clientID: process.env.GITHUB_CLIENT_ID!,
       clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-      callbackURL: "/auth/github/callback",
+       callbackURL: "https://k9182qsm-5000.asse.devtunnels.ms/auth/github/callback", // ✅ Updated
       scope: ["user:email"],
+      proxy: true, // ✅ Important for dev tunnels
+    
     },
     async (
       accessToken: string,
@@ -211,11 +305,14 @@ router.get(
   '/auth/github/callback',
   passport.authenticate('github', { failureRedirect: '/login' }),
   (req, res) => {
+    
     const user = req.user as any;
+
+
     const jwtToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET!, { expiresIn: '7d' });
 
     // Redirect to frontend with token
-    res.redirect(`http://localhost:5173`);
+    res.redirect(`https://k9182qsm-5173.asse.devtunnels.ms`);
   }
 );
 
