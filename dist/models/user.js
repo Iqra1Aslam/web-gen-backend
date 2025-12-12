@@ -31,5 +31,9 @@ const userSchema = new mongoose_1.Schema({
     otpAttempts: { type: Number, default: 0 },
     credits: { type: Number, default: 5 }, // e.g., 5 free credits per month
     lastCreditReset: { type: Date, default: new Date() },
+    // ✅ Token usage totals
+    totalInputTokens: { type: Number, default: 0 },
+    totalOutputTokens: { type: Number, default: 0 },
+    totalTokens: { type: Number, default: 0 },
 });
 exports.User = (0, mongoose_1.model)("User", userSchema);

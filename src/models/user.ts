@@ -32,6 +32,10 @@ export interface IUser extends Document {
 
   credits: number;               // Current available credits
   lastCreditReset: Date;         // Last reset date
+  // ✅ Token tracking
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalTokens: number;
   
 }
 
@@ -51,6 +55,10 @@ const userSchema = new Schema<IUser>({
   otpAttempts: { type: Number, default: 0 },
   credits: { type: Number, default: 5 },          // e.g., 5 free credits per month
   lastCreditReset: { type: Date, default: new Date() },
+   // ✅ Token usage totals
+  totalInputTokens: { type: Number, default: 0 },
+  totalOutputTokens: { type: Number, default: 0 },
+  totalTokens: { type: Number, default: 0 },
 });
 
 export const User = model<IUser>("User", userSchema);

@@ -16,6 +16,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const genai_1 = require("@google/genai");
 const dotenv_1 = __importDefault(require("dotenv"));
+const cookie_parser_1 = __importDefault(require("cookie-parser"));
 dotenv_1.default.config();
 const prompts_js_1 = require("./prompts.js");
 const multer = require('multer');
@@ -43,7 +44,13 @@ app.use((0, express_session_1.default)({
     secret: process.env.SESSION_SECRET || "mysecret",
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false } // set true if using HTTPS
+    // cookie: { secure: false } // set true if using HTTPS
+    cookie: {
+        secure: false, // only HTTPS in prod
+        maxAge: 10 * 60 * 1000, // 10 minutes
+        httpOnly: true,
+        sameSite: "lax",
+    },
 }));
 // Passport middleware
 app.use(passport_1.default.initialize());
@@ -64,6 +71,8 @@ app.use(cors({
     credentials: true,
 }));
 app.use(express_1.default.json());
+// ✅ IMPORTANT: Order matters!
+app.use((0, cookie_parser_1.default)());
 const ai = new genai_1.GoogleGenAI({ apiKey: GEMINI_API_KEY });
 const upload = multer({ storage: multer.memoryStorage() });
 const groq = new groq_sdk_1.default({
@@ -343,8 +352,9 @@ app.listen(PORT, () => {
 // Pricing per 1M tokens
 const INPUT_PRICE = 0.10;
 const OUTPUT_PRICE = 0.40;
+// $0.40 / 1,000,000 * 70,000 = $0.028
 // Convert USD → credits
-const CREDIT_VALUE = 0.002; // $0.002 = 1 credit
+const CREDIT_VALUE = 0.02; // $0.02 = 1 credit
 // Reset monthly credits
 function resetMonthlyCreditsIfNeeded(user) {
     const now = new Date();
@@ -361,85 +371,6 @@ function resetMonthlyCreditsIfNeeded(user) {
         user.lastCreditReset = now;
     }
 }
-// app.post('/api/generates', upload.single('image'), async (req, res): Promise<any> => {
-//   try {
-//     const userprompt = req.body.prompt;
-//     const userId = req.body.userId;
-//     if (!userprompt) {
-//       return res.status(400).json({ error: 'Prompt is required' });
-//     }
-//     console.log("User prompt:", userprompt);
-//     const user = await User.findById(userId);
-//     if (!user) return res.status(404).json({ error: "User not found" });
-//     resetMonthlyCreditsIfNeeded(user);
-//     if (user.credits <= 0) {
-//       return res.status(403).json({ error: "Not enough credits" });
-//     }
-//     const systemPrompt = getSystemPrompt();
-//     const userMessage = `
-// ${defaultPrompt}
-// User prompt: ${userprompt}
-// `;
-//     const messages: any[] = [
-//       { role: "system", content: systemPrompt }
-//     ];
-//     let model = "llama-3.2-90b-code";
-//     // ✅ IMAGE FLOW
-//     if (req.file) {
-//       const baseImage = req.file.buffer.toString("base64");
-//       messages.push({
-//         role: "user",
-//         content: [
-//           { type: "text", text: userMessage },
-//           {
-//             type: "image_url",
-//             image_url: {
-//               url: `data:${req.file.mimetype};base64,${baseImage}`
-//             }
-//           }
-//         ]
-//       });
-//       model = "llama-3.2-90b-vision-preview";
-//     } 
-//     // ✅ TEXT-ONLY FLOW
-//     else {
-//       messages.push({
-//         role: "user",
-//         content: userMessage
-//       });
-//     }
-//     // ✅ CALL GROQ
-//     const response = await groq.chat.completions.create({
-//       model,
-//       messages,
-//       temperature: 0.1,
-//       top_p: 0.95,
-//       max_tokens: 8000
-//     });
-//     const generatedText = response.choices[0].message?.content || "";
-//     const inputTokens = response.usage?.prompt_tokens ?? 0;
-//     const outputTokens = response.usage?.completion_tokens ?? 0;
-//     const inputCost = (inputTokens / 1_000_000) * INPUT_PRICE;
-//     const outputCost = (outputTokens / 1_000_000) * OUTPUT_PRICE;
-//     const totalCostUSD = inputCost + outputCost;
-//     const creditUsage = Math.ceil(totalCostUSD / CREDIT_VALUE);
-//     if (user.credits < creditUsage) {
-//       return res.status(403).json({ error: "Not enough credits" });
-//     }
-//     user.credits -= creditUsage;
-//     await user.save();
-//     return res.json({
-//       steps: generatedText,
-//       tokens: { inputTokens, outputTokens },
-//       cost: totalCostUSD,
-//       creditsUsed: creditUsage,
-//       creditsRemaining: user.credits
-//     });
-//   } catch (error) {
-//     console.error(error);
-//     return res.status(500).json({ error: "Generation failed" });
-//   }
-// });
 app.post('/api/generates', upload.single('image'), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     try {
@@ -490,22 +421,30 @@ app.post('/api/generates', upload.single('image'), (req, res) => __awaiter(void 
         console.log(response);
         const generatedText = (_f = (_e = (_d = (_c = (_b = (_a = response.candidates) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.content) === null || _c === void 0 ? void 0 : _c.parts) === null || _d === void 0 ? void 0 : _d[0]) === null || _e === void 0 ? void 0 : _e.text) !== null && _f !== void 0 ? _f : "";
         console.log("Generated text:", generatedText);
+        const TOKENS_PER_CREDIT = 70000;
         //   // --- Credit calculation ---
         const inputTokens = (_h = (_g = response.usageMetadata) === null || _g === void 0 ? void 0 : _g.promptTokenCount) !== null && _h !== void 0 ? _h : 0;
         const outputTokens = (_k = (_j = response.usageMetadata) === null || _j === void 0 ? void 0 : _j.candidatesTokenCount) !== null && _k !== void 0 ? _k : 0;
+        const totalTokens = inputTokens + outputTokens;
         const inputCost = (inputTokens / 1000000) * INPUT_PRICE;
         const outputCost = (outputTokens / 1000000) * OUTPUT_PRICE;
         const totalCostUSD = inputCost + outputCost;
         console.log("total Cost USD", totalCostUSD);
-        const creditUsage = Math.ceil(totalCostUSD / CREDIT_VALUE);
+        const creditUsages = totalCostUSD / CREDIT_VALUE;
+        console.log("credit usage per USD", creditUsages);
+        const creditUsage = totalTokens / TOKENS_PER_CREDIT;
         console.log("credit usage", creditUsage);
         if (user.credits < creditUsage)
             return res.status(403).json({ error: "Not enough credits" });
+        user.totalInputTokens += inputTokens;
+        user.totalOutputTokens += outputTokens;
+        user.totalTokens += totalTokens;
         user.credits -= creditUsage;
         yield user.save();
         return res.json({
             steps: generatedText,
-            tokens: { inputTokens, outputTokens },
+            tokens: { inputTokens, outputTokens,
+                totalTokens, },
             costUSD: totalCostUSD,
             creditsUsed: creditUsage,
             creditsRemaining: user.credits

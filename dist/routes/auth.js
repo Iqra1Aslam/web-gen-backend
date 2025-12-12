@@ -36,9 +36,39 @@ router.post("/signup", (req, res) => __awaiter(void 0, void 0, void 0, function*
         if (existingUser)
             return res.status(400).json({ message: "User already exists" });
         const hashedPassword = yield bcryptjs_1.default.hash(password, 10);
-        const newUser = new user_1.User({ name, email, password: hashedPassword });
-        yield newUser.save();
-        res.status(201).json({ message: "User created successfully", user: { id: newUser._id }, });
+        const user = new user_1.User({ name, email, password: hashedPassword });
+        yield user.save();
+        // --------------------------
+        // 🔥 Generate OTP
+        // --------------------------
+        const otp = Math.floor(1000 + Math.random() * 9000).toString();
+        const expireTime = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+        user.otp = otp;
+        user.otpExpire = expireTime;
+        yield user.save();
+        // --------------------------
+        // 🔥 Send OTP via Resend
+        // --------------------------
+        yield resend_1.resend.emails.send({
+            from: process.env.SENDER_EMAIL,
+            to: user.email,
+            subject: "Your Login OTP Code",
+            html: `
+        <h2>Your OTP Code</h2>
+        <p style="font-size:24px; font-weight:bold;">${otp}</p>
+        <p>This OTP will expire in 5 minutes.</p>
+      `,
+        });
+        res.status(201).json({
+            otpRequired: true,
+            id: user._id,
+            message: "OTP sent to your email",
+            user: {
+                id: user._id,
+                email: user.email,
+                name: user.name
+            }
+        });
     }
     catch (err) {
         console.error("Signup error:", err);
@@ -75,30 +105,8 @@ router.post("/signin", (req, res) => __awaiter(void 0, void 0, void 0, function*
         const isMatch = yield bcryptjs_1.default.compare(password, user.password);
         if (!isMatch)
             return res.status(400).json({ message: "Invalid credentials" });
-        // --------------------------
-        // 🔥 Generate OTP
-        // --------------------------
-        const otp = Math.floor(1000 + Math.random() * 9000).toString();
-        const expireTime = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-        user.otp = otp;
-        user.otpExpire = expireTime;
-        yield user.save();
-        // --------------------------
-        // 🔥 Send OTP via Resend
-        // --------------------------
-        yield resend_1.resend.emails.send({
-            from: process.env.SENDER_EMAIL,
-            to: user.email,
-            subject: "Your Login OTP Code",
-            html: `
-        <h2>Your OTP Code</h2>
-        <p style="font-size:24px; font-weight:bold;">${otp}</p>
-        <p>This OTP will expire in 5 minutes.</p>
-      `,
-        });
         return res.status(200).json({
-            otpRequired: true,
-            message: "OTP sent to your email",
+            name: user.name,
             email: user.email,
             id: user._id
         });
@@ -158,6 +166,7 @@ passport_1.default.use(new passport_google_oauth20_1.Strategy({
         if (!user) {
             // Create new user if not exists
             user = yield user_1.User.create({
+                name: profile.displayName,
                 email,
                 oauthProvider: "google",
                 oauthId: profile.id,
@@ -165,6 +174,7 @@ passport_1.default.use(new passport_google_oauth20_1.Strategy({
         }
         else if (!user.oauthProvider) {
             // Update oauthProvider & oauthId if missing
+            user.name = profile.displayName;
             user.oauthProvider = "google";
             user.oauthId = profile.id;
             yield user.save();
@@ -192,22 +202,6 @@ router.get("/auth/google", (req, res, next) => {
     console.log("Google auth route hit"); // ✅ log when route is called
     next(); // pass to passport
 }, passport_1.default.authenticate("google", { scope: ["profile", "email"] }));
-// Step 2: Google callback
-// router.get(
-//   "/auth/google/callback",
-//   passport.authenticate("google", { failureRedirect: "/login" }),
-//   (req, res) => {
-//     // Login success, generate JWT or redirect
-//     const user = req.user as any;
-//     const jwtToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET!, {
-//       expiresIn: "7d",
-//     });
-//     // Option 1: Redirect to frontend with token
-//     res.redirect(`https://k9182qsm-5173.asse.devtunnels.ms/dashboard?token=${jwtToken}`);
-//     // Option 2: Send JSON (if called via fetch)
-//     // res.status(200).json({ token: jwtToken, user: { id: user._id, email: user.email } });
-//   }
-// );
 router.get("/auth/google/callback", (req, res, next) => {
     console.log("Google callback route hit"); // ✅ log when callback is called
     next();
@@ -215,9 +209,15 @@ router.get("/auth/google/callback", (req, res, next) => {
     console.log("Google login successful:", req.user);
     const user = req.user;
     const jwtToken = jsonwebtoken_1.default.sign({ id: user._id }, process.env.JWT_SECRET, {
-        expiresIn: "7d",
+        expiresIn: "10m",
     });
-    res.redirect(`https://k9182qsm-5173.asse.devtunnels.ms`);
+    const session = req.session;
+    session.userId = user._id;
+    session.name = user.name,
+        session.email = user.email,
+        // session.jwt = jwtToken;
+        console.log("Session after login:", req.session); // ✅ check it
+    res.redirect(`https://k9182qsm-5173.asse.devtunnels.ms`); // Redirect with token
 });
 // GitHub OAuth
 passport_1.default.use(new passport_github2_1.Strategy({
@@ -237,6 +237,7 @@ passport_1.default.use(new passport_github2_1.Strategy({
         });
         if (!user) {
             user = yield user_1.User.create({
+                name: profile.displayName || profile.username,
                 email,
                 oauthProvider: "github",
                 oauthId: profile.id,
@@ -254,7 +255,26 @@ router.get('/auth/github', passport_1.default.authenticate('github'));
 router.get('/auth/github/callback', passport_1.default.authenticate('github', { failureRedirect: '/login' }), (req, res) => {
     const user = req.user;
     const jwtToken = jsonwebtoken_1.default.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const session = req.session;
+    session.userId = user._id;
+    session.jwt = jwtToken;
+    session.name = user.name,
+        session.email = user.email,
+        console.log("Session after GitHub login:", req.session);
     // Redirect to frontend with token
     res.redirect(`https://k9182qsm-5173.asse.devtunnels.ms`);
 });
+router.get("/me", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const session = req.session; // ✅ cast to any
+    console.log("GET /api/me called, session:", req.session);
+    if (!session.userId)
+        return res.status(401).json({ error: "Not logged in" });
+    // if (!req.session.userId) return res.status(401).json({ error: "Not logged in" });
+    // ✅ Make sure this line exists and executes
+    return res.json({
+        userId: session.userId,
+        name: session.name,
+        email: session.email
+    });
+}));
 exports.default = router;

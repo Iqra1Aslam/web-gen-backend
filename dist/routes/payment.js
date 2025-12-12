@@ -1,37 +1,4 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -45,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = __importStar(require("express"));
+const express_1 = require("express");
 const stripe_1 = __importDefault(require("stripe"));
 const user_1 = require("../models/user");
 const stripe = new stripe_1.default(process.env.STRIPE_SECRET_KEY);
@@ -57,9 +24,9 @@ router.post('/api/create-checkout', (req, res) => __awaiter(void 0, void 0, void
         console.log("userId", userId);
         // Define credit packages
         const packages = {
-            basic: { credits: 500, price: 399 }, // $3.99
-            pro: { credits: 1500, price: 999 }, // $9.99
-            premium: { credits: 3000, price: 1999 } // $19.99
+            basic: { credits: 142, price: 499 }, // $2.50
+            pro: { credits: 284, price: 999 },
+            premium: { credits: 568, price: 1999 }
         };
         const selected = packages[creditsPackage];
         if (!selected) {
@@ -93,56 +60,82 @@ router.post('/api/create-checkout', (req, res) => __awaiter(void 0, void 0, void
         res.status(500).json({ error: 'Checkout creation failed' });
     }
 }));
-router.post('/api/webhook', express_1.default.raw({ type: 'application/json' }), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b;
-    const sig = req.headers['stripe-signature'];
-    try {
-        const event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-        if (event.type === 'checkout.session.completed') {
-            const session = event.data.object;
-            const userId = (_a = session.metadata) === null || _a === void 0 ? void 0 : _a.userId;
-            const credits = parseInt(((_b = session.metadata) === null || _b === void 0 ? void 0 : _b.credits) || '0');
-            // Add credits to user
-            const user = yield user_1.User.findById(userId);
-            if (user) {
-                user.credits += credits;
-                yield user.save();
-                console.log(`Added ${credits} credits to user ${userId}`);
-            }
-        }
-        res.json({ received: true });
-    }
-    catch (error) {
-        console.error('Webhook error:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        res.status(400).send(`Webhook Error: ${errorMessage}`);
-    }
-}));
 // backend: payment.ts
+// router.get('/api/confirm-payment', async (req: Request, res: Response): Promise<any> => {
+//   try {
+//     const sessionId = req.query.session_id as string;
+//     if (!sessionId) return res.status(400).json({ error: 'Missing session_id' });
+//     // Retrieve from Stripe
+//     const session = await stripe.checkout.sessions.retrieve(sessionId);
+//     console.log("🔥 STRIPE SESSION METADATA:", session.metadata);
+//     const userId = session.metadata?.userId;
+//     const credits = parseInt(session.metadata?.credits || '0');
+//     console.log("➡️ Extracted userId:", userId);
+//     console.log("➡️ Credits from metadata:", credits);
+//     if (!userId) return res.status(400).json({ error: 'User ID not found in metadata' });
+//     // Lookup user
+//     const user = await User.findById(userId).select("-password -__v -token");
+//     console.log("🧪 User found in DB:", user);
+//     if (user) {
+//       user.credits += credits;
+//       await user.save();
+//       console.log(`✔️ Saved credits. New balance: ${user.credits}`);
+//     }
+//     res.json({
+//       creditsAdded: credits,
+//       user
+//     });
+//   } catch (error: any) {
+//     console.error("❌ Error in payment confirm:", error.message);
+//     res.status(500).json({ error: "Payment confirmation failed" });
+//   }
+// });
 router.get('/api/confirm-payment', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b;
+    var _a, _b, _c;
     try {
         const sessionId = req.query.session_id;
         if (!sessionId)
             return res.status(400).json({ error: 'Missing session_id' });
-        // Retrieve session from Stripe
+        // Retrieve session
         const session = yield stripe.checkout.sessions.retrieve(sessionId);
-        const userId = (_a = session.metadata) === null || _a === void 0 ? void 0 : _a.userId;
-        const credits = parseInt(((_b = session.metadata) === null || _b === void 0 ? void 0 : _b.credits) || '0');
+        console.log("🔥 STRIPE SESSION METADATA:", session.metadata);
+        // ❗ Prevent multiple calls
+        if (((_a = session.metadata) === null || _a === void 0 ? void 0 : _a.processed) === "true") {
+            console.log("⚠️ Payment already processed. No credits added again.");
+            const user = yield user_1.User.findById(session.metadata.userId).select("-password -__v -token");
+            return res.json({
+                message: "Payment already processed",
+                creditsAdded: 0,
+                user
+            });
+        }
+        const userId = (_b = session.metadata) === null || _b === void 0 ? void 0 : _b.userId;
+        const credits = parseInt(((_c = session.metadata) === null || _c === void 0 ? void 0 : _c.credits) || "0");
+        console.log("➡️ Extracted userId:", userId);
+        console.log("➡️ Credits:", credits);
         if (!userId)
-            return res.status(400).json({ error: 'User ID not found in session metadata' });
-        // Update DB
-        const user = yield user_1.User.findById(userId);
+            return res.status(400).json({ error: "User ID missing" });
+        // Fetch user
+        const user = yield user_1.User.findById(userId).select("-password -__v -token");
+        console.log("🧪 User found:", user);
         if (user) {
             user.credits += credits;
             yield user.save();
-            console.log(`Added ${credits} credits to user ${userId}`);
+            console.log(`✔️ Credits added. New balance: ${user.credits}`);
         }
-        res.json({ creditsAdded: credits });
+        // 🔥 Mark payment as processed in Stripe metadata
+        yield stripe.checkout.sessions.update(sessionId, {
+            metadata: Object.assign(Object.assign({}, session.metadata), { processed: "true" }),
+        });
+        res.json({
+            message: "Payment processed successfully",
+            creditsAdded: credits,
+            user
+        });
     }
     catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Payment confirmation failed' });
+        console.error("❌ Error in payment confirm:", error.message);
+        res.status(500).json({ error: "Payment confirmation failed" });
     }
 }));
 exports.default = router;
