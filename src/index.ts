@@ -12,7 +12,7 @@ import axios from "axios";
 import { TextServiceClient} from "@google-ai/generativelanguage";
 
 import { createRepo } from './controllers/githubContrller.js';
-import { xai } from "@ai-sdk/xai";
+
 import { generateText } from 'ai';
 import OpenAI from "openai";
 import session from "express-session";
