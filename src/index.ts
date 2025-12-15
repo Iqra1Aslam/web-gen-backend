@@ -17,6 +17,9 @@ import { generateText } from 'ai';
 import OpenAI from "openai";
 import session from "express-session";
 import passport from "passport";
+import helmet from "helmet";
+
+
 
 import authRoutes from "./routes/auth";
 import payRoutes from "./routes/payment.js"
@@ -47,7 +50,7 @@ app.use(session({
       sameSite: "lax",
     },
 }));
-
+// app.use(helmet());
 // Passport middleware
 app.use(passport.initialize());
 app.use(passport.session());

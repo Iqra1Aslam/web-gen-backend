@@ -321,15 +321,24 @@ router.get(
     session.name=user.name,
     session.email=user.email,
     console.log("Session after GitHub login:", req.session);
+     res.redirect(
+  `${process.env.FRONTEND_URL}`
+);
 
     // Redirect to frontend with token
-    res.redirect(`https://k9182qsm-5173.asse.devtunnels.ms`);
+    // res.redirect(`https://k9182qsm-5173.asse.devtunnels.ms`);
   }
 );
 router.get("/me", async (req: Request, res: Response): Promise<any> => {
   const session = req.session as any; // ✅ cast to any
 console.log("GET /api/me called, session:", req.session);
-  if (!session.userId) return res.status(401).json({ error: "Not logged in" });
+ console.log("SESSION:", req.session);
+  console.log("USER:", req.user);
+
+  if (!req.user) {
+    return res.status(401).json({ error: "Not logged in" });
+  }
+  // if (!session.userId) return res.status(401).json({ error: "Not logged in" });
 
   // if (!req.session.userId) return res.status(401).json({ error: "Not logged in" });
 
@@ -339,6 +348,88 @@ console.log("GET /api/me called, session:", req.session);
    name:session.name,
 email:session.email
   });
+});
+router.post("/forgot-password", async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Generate OTP
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const expireTime = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    user.otp = otp;
+    user.otpExpire = expireTime;
+    await user.save();
+
+    // Send OTP email
+    await resend.emails.send({
+      from: process.env.SENDER_EMAIL!,
+      to: user.email,
+      subject: "Reset Your Password - OTP",
+      html: `
+        <h2>Password Reset OTP</h2>
+        <p style="font-size:24px; font-weight:bold;">${otp}</p>
+        <p>This OTP will expire in 5 minutes.</p>
+      `,
+    });
+
+    res.status(200).json({
+      otpRequired: true,
+      message: "Password reset OTP sent to your email",
+    });
+
+  } catch (err) {
+    console.error("Forgot password error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+router.post("/reset-password", async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        message: "Email, OTP, and new password are required",
+      });
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user || user.otp !== otp) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    if (!user.otpExpire || user.otpExpire < new Date()) {
+      return res.status(400).json({ message: "OTP expired" });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+
+    // Clear OTP fields
+    user.otp = undefined;
+    user.otpExpire = undefined;
+
+    await user.save();
+
+    res.status(200).json({
+      message: "Password reset successfully",
+    });
+
+  } catch (err) {
+    console.error("Reset password error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
 
