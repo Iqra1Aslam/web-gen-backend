@@ -57,48 +57,6 @@ router.post('/api/create-checkout', async (req: Request, res: Response): Promise
   }
 });
 
-// backend: payment.ts
-// router.get('/api/confirm-payment', async (req: Request, res: Response): Promise<any> => {
-//   try {
-//     const sessionId = req.query.session_id as string;
-//     if (!sessionId) return res.status(400).json({ error: 'Missing session_id' });
-
-//     // Retrieve from Stripe
-//     const session = await stripe.checkout.sessions.retrieve(sessionId);
-
-//     console.log("🔥 STRIPE SESSION METADATA:", session.metadata);
-
-//     const userId = session.metadata?.userId;
-//     const credits = parseInt(session.metadata?.credits || '0');
-
-//     console.log("➡️ Extracted userId:", userId);
-//     console.log("➡️ Credits from metadata:", credits);
-
-//     if (!userId) return res.status(400).json({ error: 'User ID not found in metadata' });
-
-//     // Lookup user
-//     const user = await User.findById(userId).select("-password -__v -token");
-
-//     console.log("🧪 User found in DB:", user);
-
-//     if (user) {
-//       user.credits += credits;
-//       await user.save();
-
-//       console.log(`✔️ Saved credits. New balance: ${user.credits}`);
-//     }
-
-//     res.json({
-//       creditsAdded: credits,
-//       user
-//     });
-
-//   } catch (error: any) {
-//     console.error("❌ Error in payment confirm:", error.message);
-//     res.status(500).json({ error: "Payment confirmation failed" });
-//   }
-// });
-
 router.get('/api/confirm-payment', async (req: Request, res: Response): Promise<any> => {
   try {
     const sessionId = req.query.session_id as string;

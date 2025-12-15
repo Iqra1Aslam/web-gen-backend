@@ -20,9 +20,6 @@ const passport_1 = __importDefault(require("passport"));
 const passport_google_oauth20_1 = require("passport-google-oauth20");
 const passport_github2_1 = require("passport-github2");
 const resend_1 = require("../utills/resend");
-const google_auth_library_1 = require("google-auth-library");
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const client = new google_auth_library_1.OAuth2Client(GOOGLE_CLIENT_ID);
 const router = (0, express_1.Router)();
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
 // SIGNUP
@@ -75,23 +72,6 @@ router.post("/signup", (req, res) => __awaiter(void 0, void 0, void 0, function*
         res.status(500).json({ message: "Server error", error: err });
     }
 }));
-// SIGNIN
-// router.post("/signin", async (req: Request, res: Response) : Promise<any> => {
-//   try {
-//     const { email, password }: SignInRequest = req.body;
-//     const user = await User.findOne({ email });
-//     if (!user) return res.status(400).json({ message: "Invalid credentials" });
-//     if (!user.password) {
-//   return res.status(400).json({ message: "User has no password set" });
-// }
-//     const isMatch = await bcrypt.compare(password, user.password);
-//     if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
-//     const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: "2h" });
-//     res.status(200).json({ token, user: { email: user.email, id: user._id } });
-//   } catch (err) {
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
 // SIGNIN (Step 1 - send OTP)
 router.post("/signin", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -152,7 +132,7 @@ router.post("/verify-signin-otp", (req, res) => __awaiter(void 0, void 0, void 0
 passport_1.default.use(new passport_google_oauth20_1.Strategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: "https://k9182qsm-5000.asse.devtunnels.ms/auth/google/callback",
+    callbackURL: `${process.env.BACKEND_URL}/auth/google/callback`,
     proxy: true, // Important for tunnels
 }, (accessToken, refreshToken, profile, done) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
@@ -217,13 +197,13 @@ router.get("/auth/google/callback", (req, res, next) => {
         session.email = user.email,
         // session.jwt = jwtToken;
         console.log("Session after login:", req.session); // ✅ check it
-    res.redirect(`https://k9182qsm-5173.asse.devtunnels.ms`); // Redirect with token
+    res.redirect(`${process.env.FRONTEND_URL}`); // Redirect with token
 });
 // GitHub OAuth
 passport_1.default.use(new passport_github2_1.Strategy({
     clientID: process.env.GITHUB_CLIENT_ID,
     clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    callbackURL: "https://k9182qsm-5000.asse.devtunnels.ms/auth/github/callback", // ✅ Updated
+    callbackURL: `${process.env.BACKEND_URL}/auth/github/callback`, // ✅ Updated
     scope: ["user:email"],
     proxy: true, // ✅ Important for dev tunnels
 }, (accessToken, refreshToken, profile, done) => __awaiter(void 0, void 0, void 0, function* () {

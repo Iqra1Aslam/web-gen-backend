@@ -17,26 +17,29 @@ const express_1 = __importDefault(require("express"));
 const genai_1 = require("@google/genai");
 const dotenv_1 = __importDefault(require("dotenv"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
+const pexels_1 = require("pexels");
 dotenv_1.default.config();
 const prompts_js_1 = require("./prompts.js");
-const multer = require('multer');
-const cors = require('cors');
-const openai_1 = __importDefault(require("openai"));
+const multer = require("multer");
+const cors = require("cors");
 const express_session_1 = __importDefault(require("express-session"));
 const passport_1 = __importDefault(require("passport"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const payment_js_1 = __importDefault(require("./routes/payment.js"));
 const db_js_1 = require("./utills/db.js");
-const groq_sdk_1 = __importDefault(require("groq-sdk"));
 const user_js_1 = require("./models/user.js");
-const openai = new openai_1.default({
-    apiKey: process.env.OPENROUTER_API_KEY,
-    baseURL: "https://openrouter.ai/api/v1",
-});
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 5000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const ALLOWED_ORIGINS = ((_a = process.env.ALLOWED_ORIGINS) === null || _a === void 0 ? void 0 : _a.split(',')) || ['http://localhost:5173'];
+// Initialize Pexels client with validation
+const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
+if (!PEXELS_API_KEY) {
+    throw new Error('PEXELS_API_KEY is not defined in environment variables');
+}
+const pexelsClient = (0, pexels_1.createClient)(PEXELS_API_KEY);
+const ALLOWED_ORIGINS = ((_a = process.env.ALLOWED_ORIGINS) === null || _a === void 0 ? void 0 : _a.split(",")) || [
+    "http://localhost:5173",
+];
 console.log("GOOGLE_CLIENT_ID:", process.env.GOOGLE_CLIENT_ID);
 console.log("GOOGLE_CLIENT_SECRET:", process.env.GOOGLE_CLIENT_SECRET);
 // Session middleware
@@ -76,115 +79,14 @@ app.use(express_1.default.json());
 app.use((0, cookie_parser_1.default)());
 const ai = new genai_1.GoogleGenAI({ apiKey: GEMINI_API_KEY });
 const upload = multer({ storage: multer.memoryStorage() });
-const groq = new groq_sdk_1.default({
-    apiKey: process.env.GROQ_API_KEY,
-});
-// app.post('/api/generate', upload.single('image'), async (req, res) => {
-//   try {
-//     const userprompt = req.body.prompt;
-//     if (!userprompt) {
-//       res.status(400).json({ error: 'Prompt is required' });
-//       return;
-//     }
-//     const systemPrompt = getSystemPrompt();
-//     let baseImage = null;
-//     let mimeType = null;
-//     // Check if an image uploaded
-//     if (req.file) {
-//       const imageBuffer = req.file.buffer;
-//       mimeType = req.file.mimetype;
-//       baseImage = imageBuffer.toString("base64");
-//     }
-//     // Construct the user message
-//     const userMessage = `Here is an artifact that contains all files of the project visible to you.
-// Consider the contents of ALL files in the project.
-// ${defaultPrompt}
-// Here is a list of files that exist on the file system but are not being shown to you:
-//   - .gitignore
-//   - package-lock.json
-// User prompt: ${userprompt}`;
-//     // Build messages array
-//     const messages: any[] = [
-//       {
-//         role: "system",
-//         content: systemPrompt,
-//       }
-//     ];
-//     // Groq API currently supports vision with llama-3.2-90b-vision-preview
-//     // For text-only, use other models like llama-3.1-70b-versatile
-//     if (baseImage && mimeType) {
-//       // Use vision model for images
-//       messages.push({
-//         role: "user",
-//         content: [
-//           { 
-//             type: "text", 
-//             text: userMessage 
-//           },
-//           {
-//             type: "image_url",
-//             image_url: {
-//               url: `data:${mimeType};base64,${baseImage}`
-//             }
-//           }
-//         ]
-//       });
-//       // Use vision-capable model
-//       const response = await groq.chat.completions.create({
-//         model: "llama-3.3-70b-specdec", // Vision model
-//         messages,
-//         temperature: 0.1,
-//         top_p: 0.95,
-//         max_tokens: 8000,
-//       });
-//       const generatedText = response.choices[0].message?.content || '';
-//       const tokensUsed = response.usage?.total_tokens || 0;
-//       console.log("Generated text:", generatedText);
-//       console.log("Generated text tokens:", tokensUsed);
-//       res.status(200).json({
-//         steps: generatedText,
-//         basefiles: defaultPrompt,
-//         tokensUsed,
-//         model: "llama-3.2-90b-code"
-//       });
-//     } else {
-//       // Text-only request - use faster, more capable text model
-//       messages.push({
-//         role: "user",
-//         content: userMessage
-//       });
-//       const response = await groq.chat.completions.create({
-//         model: "llama-3.3-70b-versatile", // Fast text model (or use llama-3.1-70b-versatile)
-//         messages,
-//         temperature: 0.1,
-//         top_p: 0.95,
-//         max_tokens: 6000,
-//       });
-//       const generatedText = response.choices[0].message?.content || '';
-//       const tokensUsed = response.usage?.total_tokens || 0;
-//       console.log("Generated text:", generatedText);
-//       console.log("Generated text tokens:", tokensUsed);
-//       res.status(200).json({
-//         steps: generatedText,
-//         basefiles: defaultPrompt,
-//         tokensUsed,
-//         model: "llama-3.3-70b-versatile"
-//       });
-//     }
-//   } catch (error) {
-//     console.error('Error generating website:', error);
-//     res.status(500).json({ 
-//       error: 'Failed to generate website',
-//       details: error instanceof Error ? error.message : String(error)
-//     });
-//   }
-// });
 app.post("/api/auto-fix", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b, _c, _d, _e;
     try {
         const { errorLog, projectFiles } = req.body;
         if (!errorLog || !projectFiles) {
-            return res.status(400).json({ error: "errorLog and projectFiles are required" });
+            return res
+                .status(400)
+                .json({ error: "errorLog and projectFiles are required" });
         }
         const systemPrompt = `
 You are an expert automated code fixer.
@@ -198,67 +100,72 @@ Output ONLY JSON:
 [
   { "name": "filename", "path": "/full/path", "content": "FULL UPDATED CODE" }
 ]
+
+No markdown. No explanations.
 `;
-        const userMessage = `
+        const finalPrompt = `
 The website failed after generation.
 
-Here is the ERROR LOG:
+ERROR LOG:
 ${errorLog}
 
-Here are the PROJECT FILES:
+PROJECT FILES:
 ${JSON.stringify(projectFiles)}
 `;
-        // Build messages array
-        const messages = [
-            {
-                role: "system",
-                content: systemPrompt,
-            }
-        ];
-        const response = yield groq.chat.completions.create({
-            model: "llama-3.2-90b-code", // Vision model
-            messages,
-            temperature: 0.1,
-            top_p: 0.95,
-            max_tokens: 6000,
+        const response = yield ai.models.generateContent({
+            model: "gemini-2.0-flash",
+            contents: [
+                {
+                    role: "user",
+                    parts: [{ text: systemPrompt }],
+                },
+                {
+                    role: "user",
+                    parts: [{ text: finalPrompt }],
+                },
+            ],
+            config: {
+                temperature: 0.1,
+                maxOutputTokens: 8000,
+            },
         });
-        // const response = await openai.chat.completions.create({
-        //   model: "x-ai/grok-code-fast-1",
-        //   messages: [
-        //     { role: "system", content: systemPrompt },
-        //     { role: "user", content: userMessage }
-        //   ],
-        //   temperature: 0.1,
-        //   max_tokens: 6000
-        // });
-        const aiOutput = ((_a = response.choices[0].message) === null || _a === void 0 ? void 0 : _a.content) || "";
+        // 🔍 LOG FULL RESPONSE
+        console.log("FULL GEMINI RESPONSE:", JSON.stringify(response, null, 2));
+        let content = ((_e = (_d = (_c = (_b = (_a = response.candidates) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.content) === null || _c === void 0 ? void 0 : _c.parts) === null || _d === void 0 ? void 0 : _d[0]) === null || _e === void 0 ? void 0 : _e.text) || "";
+        content = content.replace(/```json\s*([\s\S]*?)```/, "$1").trim();
         let fixedFiles;
         try {
-            fixedFiles = JSON.parse(aiOutput);
+            fixedFiles = JSON.parse(content);
         }
-        catch (err) {
+        catch (_f) {
             return res.status(500).json({
                 error: "AI returned invalid JSON",
-                raw: aiOutput
+                raw: content,
             });
         }
-        res.json({ fixedFiles });
+        console.log("Auto-fixed files:", fixedFiles);
+        return res.json({ fixedFiles });
     }
     catch (error) {
         console.error("Auto-fix error:", error);
-        res.status(500).json({ error: "Failed to auto-fix", details: error });
+        return res.status(500).json({
+            error: "Failed to auto-fix",
+            details: error instanceof Error ? error.message : error,
+        });
     }
 }));
 app.get("/", (req, res) => {
     res.send("Server is running! 🚀");
 });
 app.post("/edit-files", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b, _c, _d, _e, _f;
     try {
         const { prompt, files } = req.body;
         if (!prompt || !files) {
             return res.status(400).json({ error: "Prompt and files are required" });
         }
+        console.log("Prompt:", prompt);
+        console.log("Files count:", files.length);
         const systemMessage = `
 You are a professional code editor.
 You receive user's project files and a modification request.
@@ -280,31 +187,72 @@ Output strictly in this JSON format:
 
 Do not include explanations or comments.
 `;
-        const messages = [
-            { role: "system", content: systemMessage },
-            { role: "user", content: `User Request:\n${prompt}` },
-            { role: "user", content: `Project Files:\n${JSON.stringify(files)}` }
-        ];
-        const response = yield groq.chat.completions.create({
-            model: "llama-3.3-70b-versatile",
-            messages,
-            temperature: 0.1,
-            top_p: 0.95,
-            max_tokens: 6000,
+        const finalPrompt = `
+User Request:
+${prompt}
+
+Project Files:
+${JSON.stringify(files)}
+`;
+        const response = yield ai.models.generateContent({
+            model: "gemini-2.0-flash",
+            contents: [
+                {
+                    role: "user",
+                    parts: [{ text: systemMessage }],
+                },
+                {
+                    role: "user",
+                    parts: [{ text: finalPrompt }],
+                },
+            ],
+            config: {
+                temperature: 0.1,
+                maxOutputTokens: 8000,
+            },
         });
-        const content = ((_a = response.choices[0].message) === null || _a === void 0 ? void 0 : _a.content) || "";
-        let updatedFiles;
-        try {
-            updatedFiles = JSON.parse(content);
-        }
-        catch (_b) {
+        // 🔍 Log the full Gemini response
+        console.log("FULL GEMINI RESPONSE:", JSON.stringify(response, null, 2));
+        let content = (_f = (_e = (_d = (_c = (_b = (_a = response.candidates) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.content) === null || _c === void 0 ? void 0 : _c.parts) === null || _d === void 0 ? void 0 : _d[0]) === null || _e === void 0 ? void 0 : _e.text) !== null && _f !== void 0 ? _f : "";
+        console.log("GEMINI TEXT OUTPUT:\n", content);
+        content = content.replace(/```json\s*([\s\S]*?)```/, "$1").trim();
+        // Extract JSON array just in case Gemini added extra text
+        const match = content.match(/\[[\s\S]*\]/);
+        if (!match) {
             return res.status(500).json({
-                error: "AI returned invalid JSON",
+                error: "Gemini did not return valid JSON array",
                 raw: content,
             });
         }
-        console.log("Generated updated text:", updatedFiles);
+        let updatedFiles;
+        try {
+            updatedFiles = JSON.parse(match[0]);
+        }
+        catch (err) {
+            return res.status(500).json({
+                error: "Failed to parse JSON",
+                raw: match[0],
+            });
+        }
+        console.log("Generated updated files:", updatedFiles);
         return res.json({ updatedFiles });
+        // if (!content) {
+        //   return res.status(500).json({
+        //     error: "Empty response from Gemini",
+        //     raw: response,
+        //   });
+        // }
+        // let updatedFiles;
+        // try {
+        //   updatedFiles = JSON.parse(content);
+        // } catch {
+        //   return res.status(500).json({
+        //     error: "AI returned invalid JSON",
+        //     raw: content,
+        //   });
+        // }
+        // console.log("Generated updated files:", updatedFiles);
+        // return res.json({ updatedFiles });
     }
     catch (error) {
         console.error("edit-files error:", error);
@@ -314,7 +262,7 @@ Do not include explanations or comments.
 console.log("Loaded MONGO_URI:", process.env.MONGO_URI);
 // Connect to DB
 (0, db_js_1.connectDB)();
-console.log('connection established');
+console.log("connection established");
 // Routes
 app.use("/", auth_1.default);
 app.use("/pay", payment_js_1.default);
@@ -322,37 +270,9 @@ app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
 // const MONTHLY_CREDITS = 5;
-// export const resetUserCreditsIfNeeded = async (userId: string) => {
-//   const user = await User.findById(userId);
-//   if (!user) throw new Error("User not found");
-//   const now = new Date();
-//   const lastReset = new Date(user.lastCreditReset);
-//   const isNewMonth =
-//     now.getFullYear() > lastReset.getFullYear() ||
-//     now.getMonth() > lastReset.getMonth();
-//   if (isNewMonth) {
-//     user.credits = MONTHLY_CREDITS;       // Reset to monthly allowance
-//     user.lastCreditReset = now;           // Update reset date
-//     await user.save();
-//   }
-//   return user.credits;
-// };
-// export const useUserCredit = async (userId: string) => {
-//   const credits = await resetUserCreditsIfNeeded(userId);
-//   if (credits <= 0) {
-//     throw new Error("No credits left for this month");
-//   }
-//   const user = await User.findById(userId);
-//   if (!user) {
-//   throw new Error("User not found");
-// }
-//   user.credits -= 1;
-//   await user.save();
-//   return user.credits; // Return remaining credits
-// };
 // Pricing per 1M tokens
-const INPUT_PRICE = 0.10;
-const OUTPUT_PRICE = 0.40;
+const INPUT_PRICE = 0.1;
+const OUTPUT_PRICE = 0.4;
 // $0.40 / 1,000,000 * 70,000 = $0.028
 // Convert USD → credits
 const CREDIT_VALUE = 0.02; // $0.02 = 1 credit
@@ -372,22 +292,189 @@ function resetMonthlyCreditsIfNeeded(user) {
         user.lastCreditReset = now;
     }
 }
-app.post('/api/generates', upload.single('image'), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+// Helper function to fetch images from Pexels
+function fetchPexelsImages(query_1) {
+    return __awaiter(this, arguments, void 0, function* (query, perPage = 5) {
+        if (!pexelsClient) {
+            console.warn('Pexels client not initialized. Skipping image fetch.');
+            return [];
+        }
+        try {
+            const response = yield pexelsClient.photos.search({
+                query,
+                per_page: perPage,
+                orientation: 'landscape'
+            });
+            if ('photos' in response) {
+                return response.photos.map(photo => ({
+                    id: photo.id,
+                    url: photo.src.large,
+                    thumbnail: photo.src.medium,
+                    photographer: photo.photographer,
+                    photographerUrl: photo.photographer_url
+                }));
+            }
+            return [];
+        }
+        catch (error) {
+            console.error('Pexels API error:', error);
+            return [];
+        }
+    });
+}
+// Helper function to extract image queries from user prompt
+function extractImageQueries(prompt) {
+    const queries = [];
+    const lowerPrompt = prompt.toLowerCase();
+    console.log('Analyzing prompt for image queries:', prompt);
+    // Look for patterns like "with images of X" or "showing X" or "photos of X"
+    const patterns = [
+        /with images of ([^,.]+)/gi,
+        /showing ([^,.]+)/gi,
+        /photos of ([^,.]+)/gi,
+        /pictures of ([^,.]+)/gi,
+        /image of ([^,.]+)/gi,
+        /include images of ([^,.]+)/gi,
+    ];
+    patterns.forEach(pattern => {
+        const matches = prompt.matchAll(pattern);
+        for (const match of matches) {
+            if (match[1]) {
+                queries.push(match[1].trim());
+            }
+        }
+    });
+    // If no specific patterns found, try to extract main subject
+    if (queries.length === 0) {
+        // Extract keywords like "coffee shop", "gym", "restaurant", etc.
+        const subjectPatterns = [
+            /(?:for a|about a|of a|create a|build a|make a|design a|develop a)\s+([a-z\s]+?)(?:\s+website|\s+landing page|\s+page|\s+app|\s+site|\s+portal|\s+platform)/i,
+            /(?:website|landing page|page|site)\s+(?:for|about)\s+(?:a\s+)?([a-z\s]+)/i,
+        ];
+        for (const pattern of subjectPatterns) {
+            const match = prompt.match(pattern);
+            if (match && match[1]) {
+                queries.push(match[1].trim());
+                break;
+            }
+        }
+    }
+    // Fallback: Look for common website types
+    if (queries.length === 0) {
+        const websiteTypes = [
+            "Landing Page",
+            "Portfolio",
+            "E-commerce",
+            "Blog",
+            "Dashboard",
+            "Corporate Website",
+            "Restaurant Menu",
+            "Photography Gallery",
+            "Music Player",
+            "Social Media App",
+            "News Portal",
+            "Travel Blog",
+            "Fashion Store",
+            "Tech Startup",
+            "Real Estate",
+            "Educational Platform",
+            "Fitness Tracker",
+            "Recipe Blog",
+            "Art Gallery",
+            "Event Planning",
+            "Medical Clinic",
+            "Law Firm",
+            "Gaming Website",
+            "Crypto Exchange",
+            "Streaming Platform",
+            "Job Board",
+            "Wedding Planner",
+            "Pet Care",
+            "Interior Design",
+            "Car Dealership",
+            "Food Delivery",
+            "Banking App",
+            "Weather App",
+            "Calendar App",
+            "Chat Application",
+            "Video Conference",
+        ];
+        for (const type of websiteTypes) {
+            if (lowerPrompt.includes(type)) {
+                queries.push(type);
+                break;
+            }
+        }
+    }
+    console.log('Extracted image queries:', queries);
+    return queries;
+}
+// Simplified function - just cleans and validates the prompt for image search
+function prepareImageQuery(prompt) {
+    console.log('Preparing image query from prompt:', prompt);
+    // Remove common non-visual words to get better image results
+    const cleanedQuery = prompt
+        .toLowerCase()
+        .replace(/\b(create|build|make|design|develop|generate|website|landing page|page|app|site|portal|platform|for|a|an|the|with|using)\b/gi, '')
+        .trim()
+        .replace(/\s+/g, ' '); // Remove extra spaces
+    console.log('Cleaned image query:', cleanedQuery);
+    // Return original prompt if cleaning resulted in empty string
+    return cleanedQuery || prompt;
+}
+app.post("/api/generates", upload.single("image"), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     try {
-        const { prompt: userprompt, userId } = req.body;
+        const { prompt: userprompt, userId, fetchImages = true } = req.body;
         if (!userprompt)
-            return res.status(400).json({ error: 'Prompt is required' });
+            return res.status(400).json({ error: "Prompt is required" });
         const user = yield user_js_1.User.findById(userId);
         if (!user)
-            return res.status(404).json({ error: 'User not found' });
+            return res.status(404).json({ error: "User not found" });
         resetMonthlyCreditsIfNeeded(user);
         if (user.credits <= 0)
-            return res.status(403).json({ error: 'Not enough credits' });
-        // Include image as base64 in the prompt (optional)
+            return res.status(403).json({ error: "Not enough credits" });
+        // Dynamically fetch images based on user prompt (enabled by default)
+        let pexelsImages = [];
+        let searchQuery = '';
+        console.log('User query:', userprompt);
+        if (fetchImages === true) {
+            // Use manual imageQuery if provided, otherwise use the user's prompt
+            searchQuery = prepareImageQuery(userprompt);
+            console.log('Fetching images for query:', searchQuery);
+            // Fetch images based on the query
+            pexelsImages = yield fetchPexelsImages(searchQuery, 3); // Fetch 5 images
+            console.log(`Fetched ${pexelsImages.length} images from Pexels`);
+        }
+        // Build final prompt for AI
         let finalPrompt = userprompt;
+        // Add Pexels images to prompt if available
+        if (pexelsImages.length > 0) {
+            finalPrompt += `\n\n[Available high-quality stock images from Pexels:\n${pexelsImages.map((img, idx) => `${idx + 1}. ${img.url} (Photo by ${img.photographer})`).join('\n')}]\n\nIMPORTANT: Use these stock photo URLs in your generated HTML code. Include proper attribution as HTML comments: <!-- Photo by [photographer name] from Pexels -->`;
+        }
+        // if (fetchImages === true) { // Explicitly check for true
+        //   const imageQueries = extractImageQueries(userprompt);
+        //   if (imageQueries.length > 0) {
+        //     console.log('Fetching images for queries:', imageQueries);
+        //     // Fetch images for each query (limit to first 2 queries to avoid too many requests)
+        //     const imagePromises = imageQueries.slice(0, 2).map(query => 
+        //       fetchPexelsImages(query, 3)
+        //     );
+        //     const imageResults = await Promise.all(imagePromises);
+        //     pexelsImages = imageResults.flat();
+        //     console.log(`Fetched ${pexelsImages.length} images from Pexels`);
+        //   }
+        // }
+        // Include image as base64 in the prompt (optional)
+        // let finalPrompt = userprompt;
+        // // Add Pexels images to prompt if available
+        // if (pexelsImages.length > 0) {
+        //   finalPrompt += `\n\n[Available stock images from Pexels:\n${pexelsImages.map((img, idx) => 
+        //     `${idx + 1}. ${img.url} (Photo by ${img.photographer})`
+        //   ).join('\n')}]\n\nIMPORTANT: Use these high-quality stock photo URLs in your generated website HTML. Include proper attribution as HTML comments near each image: <!-- Photo by ${pexelsImages[0].photographer} from Pexels -->`;
+        // }
         if (req.file) {
-            const base64Image = req.file.buffer.toString('base64');
+            const base64Image = req.file.buffer.toString("base64");
             finalPrompt += `\n[Attached image: data:${req.file.mimetype};base64,${base64Image}]`;
         }
         // const generatedText = json.candidates?.[0]?.content?.[0]?.text || "";
@@ -444,11 +531,11 @@ app.post('/api/generates', upload.single('image'), (req, res) => __awaiter(void 
         yield user.save();
         return res.json({
             steps: generatedText,
-            tokens: { inputTokens, outputTokens,
-                totalTokens, },
+            images: pexelsImages,
+            tokens: { inputTokens, outputTokens, totalTokens },
             costUSD: totalCostUSD,
             creditsUsed: creditUsage,
-            creditsRemaining: user.credits
+            creditsRemaining: user.credits,
         });
     }
     catch (error) {

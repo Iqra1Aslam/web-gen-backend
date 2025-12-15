@@ -13,7 +13,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-   
     "@google-ai/generativelanguage": "^3.5.0",
     "@google/genai": "^1.4.0",
     "ai": "^5.0.101",
@@ -36,9 +35,9 @@
     "passport": "^0.7.0",
     "passport-github2": "^0.1.12",
     "passport-google-oauth20": "^2.0.0",
+    "pexels": "^1.4.0",
     "resend": "^6.5.2",
     "stripe": "^20.0.0"
-  
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
