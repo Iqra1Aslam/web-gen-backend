@@ -517,16 +517,6 @@ app.post(
           maxOutputTokens: 8000,
         },
       });
-
-      // const response = await ai.models.generateContent({
-      //   model: "gemini-2.0-flash",
-      //   contents: [
-      //     {
-      //       role: "user",
-      //        parts: [{ text: finalPrompt }],
-      //     },
-      //   ],
-      // });
       console.log(response);
 
       const generatedText =
@@ -570,3 +560,171 @@ app.post(
     }
   }
 );
+app.post(
+  "/api/generate",
+  upload.single("image"),
+  async (req, res): Promise<any> => {
+    console.log("🔥 /api/generates hit");
+
+    try {
+      console.log("➡️ Request body:", req.body);
+      console.log("➡️ File received:", req.file ? "YES" : "NO");
+
+      const { prompt: userprompt, userId, fetchImages = true } = req.body;
+
+      if (!userprompt) {
+        console.error("❌ Prompt missing");
+        return res.status(400).json({ error: "Prompt is required" });
+      }
+
+      console.log("➡️ Finding user:", userId);
+      const user = await User.findById(userId);
+
+      if (!user) {
+        console.error("❌ User not found:", userId);
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      console.log("✅ User found, credits:", user.credits);
+
+      resetMonthlyCreditsIfNeeded(user);
+
+      if (user.credits <= 0) {
+        console.error("❌ Insufficient credits");
+        return res.status(403).json({ error: "Not enough credits" });
+      }
+
+      // ---------------- IMAGES ----------------
+      let pexelsImages: any[] = [];
+
+      console.log("➡️ fetchImages flag:", fetchImages, typeof fetchImages);
+
+      if (fetchImages === true || fetchImages === "true") {
+        console.log("➡️ Extracting image queries from prompt");
+
+        const imageQueries = extractImageQueries(userprompt);
+        console.log("➡️ Image queries:", imageQueries);
+
+        if (imageQueries.length > 0) {
+          console.log("➡️ Fetching images from Pexels...");
+
+          const imagePromises = imageQueries
+            .slice(0, 2)
+            .map(query => fetchPexelsImages(query, 3));
+
+          const imageResults = await Promise.all(imagePromises);
+          pexelsImages = imageResults.flat();
+
+          console.log("✅ Images fetched:", pexelsImages.length);
+        }
+      }
+
+      // ---------------- PROMPT ----------------
+      let finalPrompt = userprompt;
+
+      if (pexelsImages.length > 0) {
+        console.log("➡️ Appending Pexels images to prompt");
+
+        finalPrompt += `\n\n[Available stock images from Pexels:\n${pexelsImages
+          .map(
+            (img, idx) =>
+              `${idx + 1}. ${img.url} (Photo by ${img.photographer})`
+          )
+          .join("\n")}]\n\nIMPORTANT: Include attribution comments.`;
+      }
+
+      if (req.file) {
+        console.log("➡️ Converting uploaded image to base64");
+
+        const base64Image = req.file.buffer.toString("base64");
+        finalPrompt += `\n[Attached image: data:${req.file.mimetype};base64,${base64Image}]`;
+      }
+
+      // ---------------- AI CALL ----------------
+      console.log("➡️ Initializing Gemini AI");
+
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+      });
+
+      const systemPrompt = getSystemPrompt();
+
+      console.log("➡️ Sending prompt to Gemini");
+      console.log("📤 Prompt length:", finalPrompt.length);
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [
+          { role: "user", parts: [{ text: systemPrompt }] },
+          { role: "user", parts: [{ text: finalPrompt }] },
+        ],
+        config: {
+          temperature: 0.1,
+          maxOutputTokens: 8000,
+        },
+      });
+
+      console.log("✅ Gemini response received");
+
+      const generatedText =
+        response?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+
+      console.log("📝 Generated text length:", generatedText.length);
+
+      // ---------------- TOKENS & CREDITS ----------------
+      const inputTokens = response.usageMetadata?.promptTokenCount ?? 0;
+      const outputTokens = response.usageMetadata?.candidatesTokenCount ?? 0;
+      const totalTokens = inputTokens + outputTokens;
+
+      console.log("🔢 Tokens:", {
+        inputTokens,
+        outputTokens,
+        totalTokens,
+      });
+
+      const inputCost = (inputTokens / 1_000_000) * INPUT_PRICE;
+      const outputCost = (outputTokens / 1_000_000) * OUTPUT_PRICE;
+      const totalCostUSD = inputCost + outputCost;
+
+      console.log("💰 Cost USD:", totalCostUSD);
+
+      const TOKENS_PER_CREDIT = 70000;
+      const creditUsage = totalTokens / TOKENS_PER_CREDIT;
+
+      console.log("💳 Credit usage:", creditUsage);
+
+      if (user.credits < creditUsage) {
+        console.error("❌ Credits not sufficient AFTER generation");
+        return res.status(403).json({ error: "Not enough credits" });
+      }
+
+      user.totalInputTokens += inputTokens;
+      user.totalOutputTokens += outputTokens;
+      user.totalTokens += totalTokens;
+      user.credits -= creditUsage;
+
+      await user.save();
+      console.log("✅ User credits updated");
+
+      return res.json({
+        steps: generatedText,
+        images: pexelsImages,
+        tokens: { inputTokens, outputTokens, totalTokens },
+        costUSD: totalCostUSD,
+        creditsUsed: creditUsage,
+        creditsRemaining: user.credits,
+      });
+    } catch (error: any) {
+      console.error("🔥🔥 GENERATION ERROR 🔥🔥");
+      console.error("Message:", error?.message);
+      console.error("Stack:", error?.stack);
+      console.error("Full error:", error);
+
+      return res.status(500).json({
+        error: "Generation failed",
+        message: error?.message,
+      });
+    }
+  }
+);
+
